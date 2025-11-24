@@ -8,13 +8,13 @@ let
   respeaker-record = pkgs.callPackage (builtins.fetchGit {
     url = "https://github.com/Thessal/usb-recording";
     ref = "main";
-    rev = "af6d21c9568c470f53496883b2ace87d467c907f";
+    rev = "ce7e61e426b1a6e9ded2cd48f3f074da9013cbdf";
   }) {};
   whisper-cpp = pkgs.callPackage "${builtins.fetchGit {
     url = "https://github.com/Thessal/usb-recording";
     ref = "main";
-    rev = "af6d21c9568c470f53496883b2ace87d467c907f";
-  }}/whisper-cpp" {};
+    rev = "ce7e61e426b1a6e9ded2cd48f3f074da9013cbdf";
+  }}/whisper-cpp/package.nix" {};
 in { 
   environment.systemPackages = [ whisper-cpp respeaker-record ];
   security.wrappers.respeaker-record = {
