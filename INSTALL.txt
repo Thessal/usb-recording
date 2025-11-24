@@ -3,7 +3,7 @@
 let respeaker-record = pkgs.callPackage (builtins.fetchGit {
     url = "https://github.com/Thessal/usb-recording";
     ref = "main";
-    rev = "(commit hash)";
+    rev = "0a874278a1b52abf66f23f3a617d707d62513d43";
   }) {};
 in { 
   environment.systemPackages = [ respeaker-record ];
