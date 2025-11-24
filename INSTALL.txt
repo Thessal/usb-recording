@@ -15,6 +15,13 @@ let
     ref = "main";
     rev = "ce7e61e426b1a6e9ded2cd48f3f074da9013cbdf";
   }}/whisper-cpp/package.nix" {};
+  #whisper-cpp-rocm = whisper-cpp.override {
+  #  rocmSupport = true;
+  #  cudaSupport = false; 
+  #  rocmPackages = pkgs.rocmPackages_6; 
+  #  rocmGpuTargets = "gfx906"; 
+  #  vulkanSupport = true; 
+  #};
 in { 
   environment.systemPackages = [ whisper-cpp respeaker-record ];
   security.wrappers.respeaker-record = {
