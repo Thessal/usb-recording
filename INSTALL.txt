@@ -1,3 +1,7 @@
+* Warning : This binary accepts arguments and requires root privilege.
+* SetUID configuration can be a security problem.
+
+
 - /etc/nixos/respeaker.nix
 { pkgs, ... }: 
 let respeaker-record = pkgs.callPackage (builtins.fetchGit {
@@ -24,4 +28,5 @@ imports =
 ];
 
 
-nix-shell -p respeaker-record
+nixos-rebuild switch
+respeaker-record
