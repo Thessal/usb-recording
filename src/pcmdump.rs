@@ -1,33 +1,29 @@
 use crate::state;
 
-use rusb::{DeviceHandle, Direction, Recipient, RequestType, GlobalContext, UsbContext};
 use anyhow::{Context, Result};
 use chrono::Local;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 use std::thread;
-use std::time::{Duration, Instant};
-use tokio::process::Command;
 
 // Audio Configuration
 const AUDIO_DEVICE: &str = "plughw:ArrayUAC10,0";
 const SAMPLE_RATE: u32 = 48000;
 const CHANNELS: u32 = 2; 
-const SCRIPT_PATH: &str = "./script.sh";
-
-
 
 // --- Raw Audio Recording Logic ---
 
 pub fn start_audio_thread(state: &mut state::SystemState) {
+
+    let datadir = state.datadir.clone();
+
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
     // Changed extension to .raw to indicate headerless PCM
-    let filename = format!("{}.raw", timestamp);
+    let filename = format!("{}/{}.raw", datadir, timestamp);
     
     let run_flag = Arc::new(AtomicBool::new(true));
     state.is_recording = run_flag.clone();

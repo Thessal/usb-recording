@@ -1,35 +1,53 @@
-mod audio;
+mod pcmdump;
 mod pcm2wav;
 mod usbctrl;
 mod state;
 
-use rusb::{DeviceHandle, Direction, Recipient, RequestType, GlobalContext, UsbContext};
+use rusb::DeviceHandle;
 use anyhow::{Context, Result};
-use chrono::Local;
-use std::fs::File;
-use std::io::{BufWriter, Write};
-use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
-use std::thread;
 use std::time::{Duration, Instant};
-use tokio::process::Command;
+use clap::Parser;
 
-// --- Configuration ---
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Location of ggml-large-v3.bin
+    #[arg(short, long, default_value = "/home/jongkook90/models")]
+    modeldir: String,
 
-// Recording and Postprocessing Configuration
-const POSTPROC_PERIOD: u64 = 3600;
-const MIN_SPEECH_LENGTH: u64 = 10;
+    /// Location of data 
+    #[arg(short, long, default_value = "/home/jongkook90/recordings")]
+    datadir: String,
 
+    /// Location of data 
+    #[arg(short, long, default_value = "ko")]
+    lang: String,
+
+    /// Period to run speech recognition
+    #[arg(short, long, default_value_t = 3600)]
+    proc_period: u64,
+
+    /// Length of silence needed to stop recording
+    #[arg(short, long, default_value_t = 10)]
+    segment_length: u64,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Args::parse();
+
     let state = Arc::new(Mutex::new(state::SystemState {
         is_recording: Arc::new(AtomicBool::new(false)),
         current_filename: Arc::new(Mutex::new(None)),
         stop_timer_start: None,
+        unprocessed_files: Arc::new(Mutex::new(vec![])),
+        modeldir: args.modeldir,
+        language: args.lang,
+        datadir: args.datadir,
     }));
 
     // Turn off LED
@@ -39,7 +57,7 @@ async fn main() -> Result<()> {
     let processor_state = state.clone();
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(POSTPROC_PERIOD)).await;
+            tokio::time::sleep(Duration::from_secs(args.proc_period)).await;
             if let Err(e) = pcm2wav::postprocessing(&processor_state).await {
                 eprintln!("Error in hourly processor: {}", e);
             }
@@ -59,7 +77,7 @@ async fn main() -> Result<()> {
         if val != 0 {
             // === Signal Active ===
             if !recording_active {
-                audio::start_audio_thread(&mut s);
+                pcmdump::start_audio_thread(&mut s);
             } else {
                 if s.stop_timer_start.is_some() {
                     println!("Signal returned. Resetting stop timer.");
@@ -72,13 +90,14 @@ async fn main() -> Result<()> {
                 match s.stop_timer_start {
                     None => s.stop_timer_start = Some(Instant::now()),
                     Some(start_time) => {
-                        if start_time.elapsed() >= Duration::from_secs(MIN_SPEECH_LENGTH) {
-                            println!("Silence detected ({}s). Stopping recording.", MIN_SPEECH_LENGTH);
+                        if start_time.elapsed() >= Duration::from_secs(args.segment_length) {
+                            println!("Silence detected ({}s). Stopping recording.", args.segment_length);
                             s.is_recording.store(false, Ordering::SeqCst);
                             
                             {
                                 let mut filename_guard = s.current_filename.lock().unwrap();
-                                *filename_guard = None;
+                                s.unprocessed_files.lock().unwrap().push(filename_guard.clone().unwrap()); // add the file to process
+                                *filename_guard = None; 
                             }
                             s.stop_timer_start = None;
                         }

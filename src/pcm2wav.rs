@@ -1,19 +1,11 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use crate::state;
 
-use rusb::{DeviceHandle, Direction, Recipient, RequestType, GlobalContext, UsbContext};
 use anyhow::{Context, Result};
-use chrono::Local;
-use std::path::Path;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
-use std::thread;
-use std::time::{Duration, Instant};
-use tokio::process::Command;
-
+use std::sync::{Arc, Mutex};
+use tokio::process::{Command};
+use std::process::{Stdio};
 
 // --- AUDIO SPECIFICATION CONSTANTS ---
 // Matches the user's request: pcm_s16le, 48000 Hz, stereo, s16
@@ -26,56 +18,97 @@ const AUDIO_FORMAT: u16 = 1; // 1 = PCM
 const BLOCK_ALIGN: u16 = CHANNELS * (BITS_PER_SAMPLE / 8); // 2 channels * 2 bytes/sample = 4 bytes
 const BYTE_RATE: u32 = SAMPLE_RATE * CHANNELS as u32 * (BITS_PER_SAMPLE / 8) as u32; // 48000 * 2 * 2 = 192000
 
+
 // --- Hourly Processing ---
 
 pub async fn postprocessing(state_arc: &Arc<Mutex<state::SystemState>>) -> Result<()> {
-    println!("Running hourly processing...");
+    println!("Running hourly postprocessing...");
     
-    let active_file = {
+    let (modeldir, language, files, active_file) = {
         let s = state_arc.lock().unwrap();
-        let guard = s.current_filename.lock().unwrap();
-        guard.clone()
+        let guard_current = s.current_filename.lock().unwrap();
+        let guard_files = s.unprocessed_files.lock().unwrap();
+        let modeldir = s.modeldir.clone();
+        let language = s.language.clone();
+        (modeldir, language, guard_files.clone(), guard_current.clone())
     };
 
-    // Changed glob to look for .raw files
-    // let entries = glob::glob("*.raw").context("Glob error")?;
-    println!("processing (not really)");
+    for file in files.iter(){
+        println!("Processing Files : {}", file);
+        let mut outfilename = String::from(file);
+        (0..4).for_each(|_| { outfilename.pop(); });
+        let filename_wav = outfilename.clone() + ".wav";
+        let filename_txt = outfilename.clone() + ".txt";
+        let filename_log = outfilename.clone() + ".log";
+        let convert_result = convert(file, filename_wav.as_str()).context("PCM to WAV conversion failed.");
+        let _: Result<()> = match convert_result{
+            Ok(()) => speech_recognition(
+                filename_wav.as_str(), filename_txt.as_str(), filename_log.as_str(),
+                modeldir.as_str(), language.as_str()
+            ).await,
+            Err(e) => Err(e)
+        };
+    }
 
-    //for entry in entries {
-    //    if let Ok(path) = entry {
-    //        let raw_str = path.to_string_lossy().to_string();
-    //        let txt_str = format!("{}.txt", raw_str);
+    println!("Files currently recording : {:?}", active_file);
 
-    //        if let Some(ref active) = active_file {
-    //            if active == &raw_str { continue; }
-    //        }
+    {
+        let s = state_arc.lock().unwrap();
+        let mut guard_files = s.unprocessed_files.lock().unwrap();
+        guard_files.drain(0..files.len());
+    }
+    println!("Hourly postprocessing finished.");
 
-    //        if !Path::new(&txt_str).exists() {
-    //            println!("Processing: {}", raw_str);
-    //            let _ = Command::new(SCRIPT_PATH)
-    //                .arg(&raw_str)
-    //                .arg(&txt_str)
-    //                .spawn(); 
-    //        }
-    //    }
-    //}
     Ok(())
 }
 
+async fn speech_recognition(input_filename: &str, output_filename: &str, log_filename: &str, modeldir: &str, language: &str) -> Result<()>{
+    let proc = Command::new("whisper-cli")
+            .arg("-l")
+            .arg(language)
+            .arg("-m")
+            .arg(format!("{}/ggml-large-v3.bin", modeldir))
+            .arg(input_filename)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
+    match proc{
+        Ok(child) => {
+            match child.wait_with_output().await {
+                Ok(output) => {
+                    fs::write(log_filename, &output.stderr).expect("Failed to write logfile.");
+                    fs::write(output_filename, &output.stdout).expect("Failed to write recognition result.");
 
-fn convert() -> io::Result<()> {
-    // --- FILE PATHS ---
-    const INPUT_FILE: &str = "input.pcm";
-    const OUTPUT_FILE: &str = "output.wav";
+                    if !output.status.success() {
+                        eprintln!("\nWarning: 'postprocessing' command exited with a non-zero status.");
+                    }
 
-    println!("Attempting to convert '{}' to '{}'...", INPUT_FILE, OUTPUT_FILE);
+                    Ok(())
+                },
+                Err(e) => {
+                    eprintln!("Error: Failed to wait for or collect output from child process.");
+                    Err(e.into())
+                }
+            }
+        },
+        Err(e) => {
+            eprintln!("Error: Failed to run whisper-cli. Binary, model, or file is missing. ({})", input_filename);
+            eprintln!("Details: {}", e);
+            return Err(e.into());
+        }
+    }
+}
+
+fn convert(input_filename: &str, output_filename: &str) -> io::Result<()> {
+
+    println!("Attempting to convert '{}' to '{}'...", input_filename, output_filename);
     println!("Target Specification: {}Hz, {} channels, {} bits/sample (s16le)", SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE);
 
     // 1. READ THE RAW PCM DATA
-    let mut input_file = match File::open(INPUT_FILE) {
+    let mut input_file = match File::open(input_filename) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("Error: Could not open input file '{}'. Make sure it exists.", INPUT_FILE);
+            eprintln!("Error: Could not open input file '{}'. Make sure it exists.", input_filename);
             eprintln!("Details: {}", e);
             return Err(e);
         }
@@ -118,7 +151,7 @@ fn convert() -> io::Result<()> {
     header.extend_from_slice(&subchunk2_size.to_le_bytes()); // Subchunk2Size (Data Size)
 
     // 3. WRITE HEADER AND DATA TO OUTPUT FILE
-    let mut output_file = File::create(OUTPUT_FILE)?;
+    let mut output_file = File::create(output_filename)?;
 
     // Write the 44-byte WAV header
     output_file.write_all(&header)?;
@@ -128,7 +161,8 @@ fn convert() -> io::Result<()> {
 
     println!("\nConversion successful!");
     println!("Data Size: {} bytes", data_size);
-    println!("Output File: '{}' created with 44-byte WAV header.", OUTPUT_FILE);
+    println!("Output File: '{}' created with 44-byte WAV header.", output_filename);
 
+    output_file.sync_all()?;
     Ok(())
 }

@@ -1,7 +1,4 @@
-// --- USB Helpers ---
-
-
-use rusb::{DeviceHandle, Direction, Recipient, RequestType, GlobalContext, UsbContext};
+use rusb::{DeviceHandle, Direction, Recipient, RequestType, GlobalContext};
 use std::time::Duration;
 use anyhow::{Context, Result};
 
