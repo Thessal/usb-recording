@@ -4,15 +4,15 @@
 
 - /etc/nixos/respeaker.nix
 { pkgs, ... }: 
-let respeaker-record = pkgs.callPackage (builtins.fetchGit {
+let respeaker-env = pkgs.callPackage (builtins.fetchGit {
     url = "https://github.com/Thessal/usb-recording";
     ref = "main";
     rev = "0a874278a1b52abf66f23f3a617d707d62513d43";
   }) {};
 in { 
-  environment.systemPackages = [ respeaker-record ];
-  security.wrappers.respeaker-record = {
-    source = "${respeaker-record}/bin/respeaker-record";
+  environment.systemPackages = [ respeaker-env ];
+  security.wrappers.respeaker-env = {
+    source = "${respeaker-env}/bin/respeaker-record";
     owner = "root";
     group = "root";
     setuid = true;
@@ -27,6 +27,14 @@ imports =
     ./respeaker.nix
 ];
 
+ggml-large-v3.bin : https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-large-v3.bin (2023-11-15)
+commit 362722b3fdcd2300b58a8286933ead1c48619667
+SHA256 64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2 
+
 
 nixos-rebuild switch
 respeaker-record
+
+--
+nix-build .
+nix-env -if .

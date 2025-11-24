@@ -1,0 +1,1 @@
+https://github.com/NixOS/nixpkgs/tree/a840c796e69ef10a7bf0a8b386a5363229cd19ff/pkgs/by-name/wh/whisper-cpp
