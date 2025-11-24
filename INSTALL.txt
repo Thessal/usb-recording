@@ -22,3 +22,6 @@ imports =
     ./hardware-configuration.nix
     ./respeaker.nix
 ];
+
+
+nix-shell -p respeaker-record

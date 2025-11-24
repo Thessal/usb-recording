@@ -4,5 +4,9 @@ pkgs.rustPlatform.buildRustPackage rec {
   version = "0.2.0";
   cargoLock.lockFile = ./Cargo.lock;
   src = pkgs.lib.cleanSource ./.;
+  buildInputs = with pkgs; [
+    cargo rustc pkg-config alsa-lib libusb1
+  ];
+  nativeBuildInputs = with pkgs; [ pkg-config ];
 }
 
