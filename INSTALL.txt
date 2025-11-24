@@ -4,13 +4,19 @@
 
 - /etc/nixos/respeaker.nix
 { pkgs, ... }: 
-let respeaker-env = pkgs.callPackage (builtins.fetchGit {
+let 
+  respeaker-env = pkgs.callPackage (builtins.fetchGit {
     url = "https://github.com/Thessal/usb-recording";
     ref = "main";
     rev = "0a874278a1b52abf66f23f3a617d707d62513d43";
   }) {};
+  whisper-cpp = pkgs.callPackage "${builtins.fetchGit {
+    url = "https://github.com/Thessal/usb-recording";
+    ref = "main";
+    rev = "0a874278a1b52abf66f23f3a617d707d62513d43";
+  }}/whisper-cpp" {};
 in { 
-  environment.systemPackages = [ respeaker-env ];
+  environment.systemPackages = [ whisper-cpp respeaker-env ];
   security.wrappers.respeaker-env = {
     source = "${respeaker-env}/bin/respeaker-record";
     owner = "root";
